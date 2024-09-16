@@ -22,12 +22,6 @@ function App() {
     <BrowserRouter>
       <Helmet>
         <title>🏃🏻 걷는대로</title>
-        <meta property="og:title" content="🏃🏻 걷는대로" />
-        <meta
-          property="og:description"
-          content="일상속 경로에서 wellness한 경험을!"
-        />
-        <meta property="og:image" content="./public/sample.png" />
       </Helmet>
       <div className="App">
         <Routes>

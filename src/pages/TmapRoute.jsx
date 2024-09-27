@@ -2,12 +2,18 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import RouteInfo from "../components/RouteInfo";
 import "../styles/TmapRoute.css";
+import Nav from "../components/Nav";
+import SearchForm from "../components/SearchForm";
+import PloggingRoute from "../pages/PloggingRoute"; // PloggingRoute 임포트
+
 const TmapRoute = () => {
   const [startLocation, setStartLocation] = useState("");
   const [endLocation, setEndLocation] = useState("");
   const [startCoords, setStartCoords] = useState(null);
   const [endCoords, setEndCoords] = useState(null);
-  const [mapInstance, setMapInstance] = useState(null);
+  const [mapInstance, setMapInstance] = useState(null); // mapInstance 상태 추가
+  const [isPloggingMode, setIsPloggingMode] = useState(false); // 플로깅 모드 상태
+  const [totalDistance, setTotalDistance] = useState(0);
 
   const headers = {
     appKey: import.meta.env.VITE_TMAP_API_KEY,
@@ -44,7 +50,6 @@ const TmapRoute = () => {
     }
   };
 
-  // 보행자 경로 API 호출
   const fetchRoute = async (startCoords, endCoords) => {
     const pedestrianUrl =
       "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1";
@@ -72,6 +77,8 @@ const TmapRoute = () => {
       const features = data.features;
 
       let drawInfoArr = [];
+      //거리 확인
+      let totalDistance = 0;
 
       features.forEach((feature) => {
         const geometry = feature.geometry;
@@ -82,27 +89,34 @@ const TmapRoute = () => {
             );
           });
         }
-      });
 
-      if (mapInstance) {
-        mapInstance.destroy(); // 기존 지도 제거
+        // 경로 거리 확인
+        if (feature.properties && feature.properties.distance) {
+          totalDistance += feature.properties.distance; // 누적 거리 계산
+        }
+      });
+      setTotalDistance(totalDistance);
+      console.log(totalDistance);
+      // 맵 인스턴스가 없을 경우 새로 생성
+      let mapInstanceToUse = mapInstance;
+      if (!mapInstance) {
+        const newMapInstance = new window.Tmapv2.Map("map_div", {
+          center: new window.Tmapv2.LatLng(startCoords.lat, startCoords.lng),
+          width: "100%",
+          height: "400px",
+          zoom: 15,
+        });
+        setMapInstance(newMapInstance);
+        mapInstanceToUse = newMapInstance;
       }
 
-      const newMapInstance = new window.Tmapv2.Map("map_div", {
-        center: new window.Tmapv2.LatLng(startCoords.lat, startCoords.lng),
-        width: "100%",
-        height: "500px",
-        zoom: 15,
-      });
-
+      // 경로 그리기
       new window.Tmapv2.Polyline({
         path: drawInfoArr,
-        strokeColor: "#FF0000",
+        strokeColor: "#FF0000", // 기본 경로 색상 (빨간색)
         strokeWeight: 6,
-        map: newMapInstance,
+        map: mapInstanceToUse, // 기존 또는 새로 생성된 맵 인스턴스 사용
       });
-
-      setMapInstance(newMapInstance);
     } catch (error) {
       console.error("경로를 가져오는 중 오류가 발생했습니다:", error);
     }
@@ -112,59 +126,53 @@ const TmapRoute = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // 출발지와 도착지의 좌표를 각각 검색
       const startCoords = await fetchCoordinates(startLocation);
       const endCoords = await fetchCoordinates(endLocation);
 
       setStartCoords(startCoords);
       setEndCoords(endCoords);
+      setIsPloggingMode(false); // 기본 경로 모드로 설정
     } catch (error) {
       console.error("경로를 가져오는 중 오류가 발생했습니다:", error);
     }
   };
 
-  // 출발지와 도착지 좌표가 업데이트되면 경로 API 호출
   useEffect(() => {
-    if (startCoords && endCoords) {
-      fetchRoute(startCoords, endCoords);
+    if (startCoords && endCoords && !isPloggingMode) {
+      fetchRoute(startCoords, endCoords); // 플로깅 모드가 아닐 때 일반 경로 그리기
     }
-    return () => {
-      if (mapInstance) {
-        mapInstance.destroy();
-      }
-    };
-  }, [startCoords, endCoords]);
+    // 기존 맵 인스턴스를 지우지 않고 상태를 유지합니다.
+  }, [startCoords, endCoords, isPloggingMode]);
 
   return (
     <div>
-      <form onSubmit={handleSubmit}>
-        <span className="search-bar">
-          <div className="start-box">
-            <div className="start-icon"></div>
-            <input
-              type="text"
-              value={startLocation}
-              onChange={(e) => setStartLocation(e.target.value)}
-              required
-              className="search-bar1"
-            />
-          </div>
-          <span className="end-icon"></span>
-          <input
-            type="text"
-            value={endLocation}
-            onChange={(e) => setEndLocation(e.target.value)}
-            required
-            className="search-bar2"
-          />
-          <button className="show-road" type="submit">
-            경로 찾기
-          </button>
-        </span>
-      </form>
+      <div className="TmapRoute">
+        <SearchForm
+          startLocation={startLocation}
+          setStartLocation={setStartLocation}
+          endLocation={endLocation}
+          setEndLocation={setEndLocation}
+          onSubmit={handleSubmit}
+          onPlogging={() => {
+            if (startCoords && endCoords) {
+              setIsPloggingMode(true); // 플로깅 모드 활성화
+            } else {
+              console.error("좌표가 설정되지 않았습니다.");
+            }
+          }}
+        />
 
-      <div id="map_div" style={{ width: "100%", height: "60vh" }}></div>
-      <RouteInfo />
+        {isPloggingMode ? (
+          <PloggingRoute startCoords={startCoords} endCoords={endCoords} />
+        ) : (
+          <div className="map-container">
+            <div id="map_div"></div>
+          </div>
+        )}
+
+        <RouteInfo totalDistance={totalDistance} />
+      </div>
+      <Nav />
     </div>
   );
 };
